@@ -1,0 +1,350 @@
+---
+title: "Bank Marketing e Estatística"
+author: "João Palma Neto (237550) e Rodrigo Gomes (186777)"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r pacotes, include=FALSE}
+install.packages("tidyverse")
+install.packages("kableExtra")
+library(kableExtra)
+library(tidyverse)
+```
+
+
+```{r limpeza, include= FALSE}
+# SELECIONANDO VARIÁVEIS RELEVANTES
+dados = read_csv2("bank.csv")
+
+dados = dados %>% select(idade = age,
+                      emprego = job, 
+                      estado_civil = marital, 
+                      escolaridade = education, 
+                      duracao = duration, 
+                      sucesso_campanha_atual = y)    
+
+
+# AGRUPANDO ENTRADAS SIMILARES 
+
+dados$escolaridade[grep("basic", dados$escolaridade)] = "ensino_fundamental"
+dados$escolaridade = sub("\\.", "_", dados$escolaridade)
+
+dados$estado_civil[grep(c("divorced|single"), dados$estado_civil)] = "single"
+
+
+# FATORIZANDO VARIÁVEIS CATEGORICAS
+
+dados$estado_civil = factor(dados$estado_civil)
+dados$escolaridade = factor(dados$escolaridade, ordered = TRUE, levels = c("illiterate", "ensino_fundamental", "high_school", "professional_course", "university_degree", "unknown"))
+dados$sucesso_campanha_atual = factor(dados$sucesso_campanha_atual)
+dados$emprego = factor(dados$emprego)
+
+
+#CONVERSÃO MÉTRICA DA DURAÇÃO DE CHAMADA
+dados = dados %>% mutate(duracao_minutos = duracao/60)
+
+# TABELA LIMPA
+
+saveRDS(dados, file = "bank.rds")
+dados = readRDS("bank.rds")
+
+# TRATAMENTO MINUTOS
+tabela_sucesso = dados %>% filter(sucesso_campanha_atual=="yes")
+tabela_fracasso = dados %>% filter(sucesso_campanha_atual=="no")
+
+Q1 <- quantile(tabela_sucesso$duracao_minutos,probs = 0.25)
+Q2 <- quantile(tabela_sucesso$duracao_minutos,probs = 0.50)
+Q3 <- quantile(tabela_sucesso$duracao_minutos,probs = 0.75)
+q1 <- quantile(tabela_fracasso$duracao_minutos,probs = 0.25)
+q2 <- quantile(tabela_fracasso$duracao_minutos,probs = 0.50)
+q3 <- quantile(tabela_fracasso$duracao_minutos,probs = 0.75)
+
+minutos = tabela_sucesso %>% select(duracao_minutos)
+min = tabela_fracasso %>% select(duracao_minutos)
+
+Estatisticas = c("Fracasso","Sucesso")
+Media = c(" 3.68"," 9.22")
+Desvio = c(" 3.45"," 6.69")
+Mediana = c(" 2.73"," 7.48")
+MIN = c(" 0.00"," 0.62")
+MAX = c(" 81.97"," 69.98")
+
+```
+  
+
+# Introdução
+
+ "A Propaganda é a alma do negócio" você já deve ter se deparado com essa frase antes, acontece que desde as grandes até as pequenas empresas utilizam desse conhecimento popular para competir pela atenção e a preferência do consumidor. E a estátistica claramente não ficaria de fora deste jogo comercial, seu papel na competição é de auxíliar os conhecimentos do comportamento do consumidor, a uma otimização efetiva, reconhecendo padrões, analisando tendências e concebenndo previsões. 
+  Este trabalho traz análise dos dados de uma campanha de telemarketing efetuada por um banco comercial, cujo objetivo era convencer os clientes a abrir uma conta bancária na instituição -- *term deposit*, ou deposito com retorno periódico de juros. Dentre as variáreis, as que serão abordadas referem-se ao perfil econômico (emprego, estado_civil, escolaridade, idade), diretamente ligadas às decisões de consumo no setor de crédito; e à duração das ligações efetuadas, afim de entender o comportamento geral de um caso de sucesso.
+ 
+
+# Banco de Dados
+
+A base é composta originalmente por 21 variáveis, listadas na tabela abaixo conforme a documentação, das quais 5 foram utilizadas no projeto, para fins de foco no objetivo supracitado. Dentre as variáveis ignoradas, 6 referem-se a dados de apoio e contexto, como taxas de preços para o consumidor e nível de emprego da economia nacional em determinado periodo. Fora excluída da análise também a variável default, bolleana e referente à situação de inadimplência dos participantes do experimento, por haver apenas 3 entradas positivas em um total de 41188 observações, sendo portanto irrelevante para fins de comparação. 
+
+## Variáveis
+
+  
+### Atributos do cliente  
+  * idade (categórico)
+  * emprego (categórico)  
+    Área de trabalho, podendo ser:
+    + admin (administrativo)
+    + blue-collar (trabalhador de colarinho-azul, atividade braçal)
+    + entrepreneur (empreendedor(a))
+    + housemaid (trabalho doméstico)
+    + management (gerência)
+    + retired (aposentado(a))
+    + self-employed (trabalhador(a) individual)
+    + services (servidor(a))
+    + student (estudante)
+    + technician (técnico(a))
+    + unemployed (desempregado(a))
+    + unknown (sem informação)  
+  * marital (categórico)  
+    Estado civil, podendo ser:
+    + divorced (divorciado(a) ou viuvo(a))
+    + married (casado(a))
+    + single (solteiro(a))
+    + unknown (sem informação)  
+  * education (categórico):  
+    Nivel de educação:
+    + basic.4y (ensino básico até o 4º ano)
+    + basic.6y (ensino básico até o 6º ano)
+    + basic.9y (ensino básico até o 9º ano)
+    + high.school (ensino médio)
+    + illiterate (analfabeto)
+    + professional.course (curso profissionalizante)
+    + university.degree (formação universitária)
+    + unknown (sem informação)  
+      
+    *Nota*: Para tornar mais claras as análises comparativas por faixa de educação, optou-se por agrupar as três categorias de ensino básico sob a categoria "ensino fundamental".  
+
+### Atributos relacionados ao último contato da campanha atual
+  * Duration (numérico): 
+    Duração em segundos do último contato.
+  * y (categórico):
+    Booleano e referente à obtenção de sucesso na campanha atual.
+
+
+# Analise exploratoria  
+
+## Por estado civíl
+```{r , include=FALSE}
+#criando dicionario de termos 
+
+label_escolaridade = c(
+  illiterate="analfabeto",
+  ensino_fundamental= "ensino fundamental",
+  high_school="ensino médio",
+  professional_course="curso profissionalizante",
+  university_degree="ensino superior")
+
+
+```
+
+
+```{r dist_ec_esc, echo=FALSE, fig.height=6, fig.width=10, message=FALSE, warning=FALSE}
+### DISTRIBUIÇÃO DE estado_civil PARA CASOS DE SUCESSO DA CAMPANHA, POR GRUPO DE escolaridade.
+
+
+subset_ec_escolaridade = dados %>% 
+    filter(sucesso_campanha_atual == "yes" & estado_civil != "unknown" & escolaridade != "unknown") %>%
+    group_by(escolaridade, estado_civil) %>%
+    summarise(count = n()) %>%
+    mutate(freq = (count / sum(count)) * 100) %>%
+    mutate(estado_civil = fct_reorder(estado_civil, freq))
+
+ggplot(subset_ec_escolaridade, aes(x= escolaridade, y = freq, fill = estado_civil)) +
+  geom_bar(stat="identity", position = "fill", color = "black")  +
+  labs(
+    title = "Distribuição percentual de Estado Civil entre os casos de sucesso",
+    subtitle = "Por grupo de escolaridade",
+    x = "",
+    y = "") +
+  scale_x_discrete(labels = c(label_escolaridade["illiterate"],
+                              label_escolaridade["ensino_fundamental"],
+                              label_escolaridade["high_school"],
+                              label_escolaridade["professional_course"],
+                              label_escolaridade["university_degree"])
+                   )+
+  theme_classic()
+
+
+```
+A variável escolaridade é utilizada como um dos parâmetros da análise de maneira intencional, utilizando das vantagens extraíveis pelo distinto comportamento entre as suas categorias, influenciadas por uma formação mais ou menos instrutiva, essa diferença busca evita distorções estatísticas para o estudo como esta sendo desenvolvido. Da 
+mesma maneira foi parametrizado o estado civil, onde a existência de uma união matrimonial pode influenciar na prosperidade ou nos interesses econômicos do cliente.  
+É entendível que apesar da educação, a população casada esta mais apta a abertura de conta do que a população solteira.
+
+```{r suc_ec_esc, echo=FALSE, fig.height=6, fig.width=10, message=FALSE, warning=FALSE}
+#DISTRIBUIÇÃO DE SUCESSO POR estado_civil E escolaridade
+
+subset_dist_ec_escolaridade = dados %>%
+  group_by(escolaridade, estado_civil, sucesso_campanha_atual) %>%
+  summarise(count = n()) %>%
+  mutate(freq = (count / sum(count)) * 100) %>%
+  ungroup %>%
+  filter(sucesso_campanha_atual == "yes" & escolaridade != "unknown" & estado_civil!= "unknown")
+  
+  
+ggplot(subset_dist_ec_escolaridade, aes(x= estado_civil, y = freq, fill = estado_civil)) +
+  geom_bar(stat = "identity", position = "dodge", color = "black")  +
+  labs(
+    title = "Porcentagem de sucesso da campanha por estado civil ",
+    x = "",
+    y = "") +
+  theme_classic() +
+  theme(axis.title.x=element_blank(), axis.text.x=element_blank(), axis.ticks.x=element_blank()) +
+  facet_wrap(~escolaridade, nrow = 1, labeller = labeller( escolaridade = label_escolaridade),   strip.position = "bottom")
+```
+Aqui a população total é separada em grupos conforme estado civil, escolaridade e sucesso da campanha, então apenas os que aceitaram a campanha são selecionados (a porcentagem se refere ao total de pessoas no grupo). Tendo em vista  o par ordenado analfabetos solteiros, formados pela união das duas categorias, temos maiores taxas de sucesso.  
+  
+## Por emprego
+  
+  Além do estado civil, outra dado econômico de grande relevância é o emprego atual do cliente, aqui classifica em tipos de emprego de renda fixa, variavel ou inexistente (desemprego), e avaliados novamente levando em conta o nível de escolaridade. É possível notar que os grupos proporcionalmente mais atingidos pela campanha são aqueles em situação econômica mais fragiizada ou instável, o que faz sentido tendo em vista a natureza financeira  do produto, com expectativas de retorno no longo prazo.   
+    
+
+```{r dist_emp_esc, echo=FALSE, fig.width=10, fig.height=6,  message=FALSE, warning=FALSE}
+#DISTRIBUIÇÃO DE SUCESSO DA CAMPANHA POR emprego E escolaridade
+
+#agrupando as categorias de emprego conforme caracteristica de renda fixa, variavel ou inexistente
+
+subset_dist_emp_escolaridade = dados
+subset_dist_emp_escolaridade$emprego = lapply(subset_dist_emp_escolaridade$emprego, as.character)
+
+subset_dist_emp_escolaridade$emprego[grep("blue|serv|admin|management|technician|retired|services", subset_dist_emp_escolaridade$emprego)] = "fixa"
+subset_dist_emp_escolaridade$emprego[grep(c("housemaid|entrepreneur|self-employed"), subset_dist_emp_escolaridade$emprego)] = "variavel"
+subset_dist_emp_escolaridade$emprego[grep(c("student|unemployed"), subset_dist_emp_escolaridade$emprego)] = "inexistente"
+
+subset_dist_emp_escolaridade$emprego = factor(subset_dist_emp_escolaridade$emprego, ordered = TRUE, levels = c("unknown", "inexistente", "variavel", "fixa"))
+
+
+subset_dist_emp_escolaridade_1 = subset_dist_emp_escolaridade %>%
+  group_by(emprego, escolaridade, sucesso_campanha_atual) %>%
+  summarise(count = n()) %>%
+  mutate(freq = (count / sum(count) * 100)) %>%
+  ungroup() %>%
+  filter(emprego != "unknown" & escolaridade != "unknown" & sucesso_campanha_atual=="yes") 
+
+ggplot(subset_dist_emp_escolaridade_1, aes(x= emprego, y = freq, fill = emprego)) +
+  geom_bar(stat = "identity", position = "dodge", color = "black")  +
+  labs(
+    title = "Porcentagem de sucesso da campanha por tipo de emprego e escolaridade ",
+    x = "",
+    y = "") +
+  theme_classic() +
+  theme(axis.title.x=element_blank(), axis.text.x=element_blank(), axis.ticks.x=element_blank()) +
+  facet_wrap(~escolaridade, nrow = 1, labeller = labeller( escolaridade = label_escolaridade),   strip.position = "bottom")
+
+```
+  
+
+Há, por outro lado, um volume muito maior de casos de sucesso com clientes de renda fixa em todos os grupos de escolaridade (salvo o grupo de analfabetos), dado que esta também é a categoria de emprego majoritária na base de dados.  
+
+```{r suc_emp_esc, echo=FALSE, fig.width=10, fig.height=6,  message=FALSE, warning=FALSE}
+
+subset_emp_escolaridade = subset_dist_emp_escolaridade %>% 
+    filter(sucesso_campanha_atual == "yes" & emprego != "unknown" & escolaridade != "unknown") %>%
+    group_by(escolaridade, emprego) %>%
+    summarise(count = n()) %>%
+    mutate(freq = (count / sum(count)) * 100) 
+
+
+ggplot(subset_emp_escolaridade, aes(x= escolaridade, y = freq, fill = emprego)) +
+  geom_bar(stat="identity", position = "fill", color = "black")  +
+  labs(
+    title = "Distribuição percentual de tipo de emprego entre os casos de sucesso",
+    subtitle = "Por nível de escolaridade",
+    x = "",
+    y = "") +
+  scale_x_discrete(labels = c(label_escolaridade["illiterate"],
+                              label_escolaridade["ensino_fundamental"],
+                              label_escolaridade["high_school"],
+                              label_escolaridade["professional_course"],
+                              label_escolaridade["university_degree"])
+                   )+
+  theme_classic()
+```
+  
+  
+## Por duração das chamadas
+  
+Por fim, para a análise quantitativa das durações de chamada, a tabela a seguir apresenta estatísticas sumárias da variável. 
+
+```{r tabX, echo=FALSE, warning=FALSE, message=FALSE}
+R = rbind("Estatísticas" = Estatisticas,"Média" = Media,Desvio,Mediana,MIN,MAX)
+tabb8 = kable(R,caption = "Estatísticas Descritivas do tempo das chamadas(min) para casos de fracasso e sucesso", label = NULL,escape = FALSE) %>%  kable_styling(latex_options = "hold_position")
+
+tabb8
+```
+  
+Avaliando as estatísticas observadas na tabela \@ref(tab:tabX) é notável que apesar da média das chamadas no caso de sucesso serem superiores ao caso de fracasso, a chamada que teve maior duração (81.97 min) pertence a um caso de fracasso, onde 75% não ultrapassa os 4.65 minutos, se assim um outlier muito singular. Pensando na efetividade das chamadas, 25% das chamadas bem sucedidas precisaram de menos de 5 minutos para vender o produto.
+
+O gráfico a seguir apresenta a frequência relativa e cumulativa de sucesso, e permite visualizar os limites máximo e mínimo de duração da chamada que abarcam a maior densidade de casos de sucesso e fracasso. Nesse caso, ligações bem sucedidas tem variam conforme um intervalo mais amplo de tempo, começando ao redor de 2 minutos e terminando em cerca de 20. 
+
+```{r suc_dur,  echo=FALSE, fig.width=10, fig.height=6,  message=FALSE, warning=FALSE}
+subset_duracao_sucesso = dados %>%
+  select(duracao_minutos, sucesso_campanha_atual) %>%
+  arrange(duracao_minutos) %>%
+  group_by(sucesso_campanha_atual) %>%
+  mutate(cum_count = row_number()) 
+
+sucesso_positivo = subset_duracao_sucesso %>%
+  filter(sucesso_campanha_atual == "yes") %>%
+  arrange(cum_count) %>%
+  mutate(cum_freq = cum_count / 4640 * 100)
+
+sucesso_negativo = subset_duracao_sucesso %>%
+  filter(sucesso_campanha_atual == "no") %>%
+  arrange(cum_count) %>%
+  mutate(cum_freq = cum_count / (41188-4640) * 100)
+
+sucesso_todos = rbind(sucesso_positivo, sucesso_negativo)
+
+
+ggplot(sucesso_todos, aes(x=duracao_minutos, y=cum_freq, col=sucesso_campanha_atual)) +
+  geom_line(size=2) +
+  theme_classic() +
+  labs(
+    title ="Porcentagem cumulativa do resultado da campnha por duração da chamada",
+    x="",
+    y="",
+    subtitle = "",
+    colour="Êxito na campanha"
+  ) +
+  theme(legend.position = "bottom")
+
+a = merge(x = data.frame(sucesso_positivo), y = subset_duracao_sucesso, all=TRUE)
+  
+```
+
+## Por idade
+
+A faixa etária é uma variável que não só estimula o comportamento e a forma de agir financeiramente, como também mantem relações com a variável estado civil.
+ Tendo em vista o intervalo entre a menor idade da amostra (17 anos) e a maior (89 anos), foi criadado hiatos interessados em uma homogeneidade entre cada faixa, tornando assim possível extrair informações isoladas pertinente ao grupo etário e também tornando visualmente atraente.
+
+
+# Conclusão
+
+ É notável que, em geral, condições mais vuneráveis financeiramente, restrições ao acesso de informação e instrução, também associadas a condições de união matrimonial e contrução familiar, gera um cenário mais favorável ao interesse do cliente no produto ofertado pelo banco. Ter ciência a respeito de outros tipos de investiemnto ou produtos do mesmo banco e entendimento a respeito da rentabilidade desses, pode influenciar com que grupos em situação mais segura financeiramente, recusem a proposta.
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+
+fx1 = tabela_sucesso %>% filter(idade <= 32 & sucesso_campanha_atual == "yes")
+fx2 = tabela_sucesso %>% filter(32 < idade & idade <= 48 & sucesso_campanha_atual == "yes")
+fx3 = tabela_sucesso %>% filter(48 < idade & idade <= 64 & sucesso_campanha_atual == "yes")
+fx4 = tabela_sucesso %>% filter(64 < idade & idade <= 79 & sucesso_campanha_atual == "yes")
+fx5 = tabela_sucesso %>% filter(79 < idade & idade <= 98 & sucesso_campanha_atual == "yes")
+
+faixa_etaria = c(length(fx1$idade),length(fx2$idade),length(fx3$idade),length(fx4$idade),length(fx5$idade))
+
+faixa_nomes = c(" Até 32 anos"," 33|49 anos"," 50|66 anos", "67|81 anos", "82|98 anos")
+
+barplot(faixa_etaria, main = "Publicidade com sucesso por faixa etária", names.arg = faixa_nomes, ylim = c(0,2000), cex.names = 0.85)
+```
+
+  
+  
